@@ -557,6 +557,87 @@ stages:
         errors = pipeline.validate_pipeline()
         assert errors == [], f"Unexpected errors: {errors}"
 
+    def test_parse_minicpm4_5_o_yaml(self, tmp_path):
+        """Test parsing the MiniCPM-O 4.5 three-stage pipeline YAML."""
+        yaml_content = """\
+model_type: minicpm4_5_o
+async_chunk: false
+
+stages:
+  - stage_id: 0
+    model_stage: thinker
+    stage_type: llm
+    input_sources: []
+    worker_type: ar
+    scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
+    is_comprehension: true
+    final_output: true
+    final_output_type: text
+
+  - stage_id: 1
+    model_stage: tts
+    stage_type: llm
+    input_sources: [0]
+    worker_type: generation
+    scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.llm2tts
+    final_output: false
+
+  - stage_id: 2
+    model_stage: token2wav
+    stage_type: llm
+    input_sources: [1]
+    worker_type: generation
+    scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.tts2token2wav
+    final_output: true
+    final_output_type: audio
+"""
+        yaml_file = tmp_path / "minicpm4_5_o.yaml"
+        yaml_file.write_text(yaml_content)
+
+        pipeline = StageConfigFactory._parse_pipeline_yaml(yaml_file, "minicpm4_5_o")
+
+        assert pipeline.model_type == "minicpm4_5_o"
+        assert pipeline.async_chunk is False
+        assert len(pipeline.stages) == 3
+
+        # Stage 0: thinker (AR)
+        s0 = pipeline.stages[0]
+        assert s0.stage_id == 0
+        assert s0.model_stage == "thinker"
+        assert s0.stage_type == StageType.LLM
+        assert s0.input_sources == []
+        assert s0.worker_type == "ar"
+        assert s0.is_comprehension is True
+        assert s0.final_output is True
+        assert s0.final_output_type == "text"
+
+        # Stage 1: TTS (generation worker)
+        s1 = pipeline.stages[1]
+        assert s1.stage_id == 1
+        assert s1.model_stage == "tts"
+        assert s1.input_sources == [0]
+        assert s1.worker_type == "generation"
+        assert s1.custom_process_input_func == ("vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.llm2tts")
+        assert s1.final_output is False
+
+        # Stage 2: Token2Wav (generation worker)
+        s2 = pipeline.stages[2]
+        assert s2.stage_id == 2
+        assert s2.model_stage == "token2wav"
+        assert s2.input_sources == [1]
+        assert s2.worker_type == "generation"
+        assert s2.custom_process_input_func == (
+            "vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.tts2token2wav"
+        )
+        assert s2.final_output is True
+        assert s2.final_output_type == "audio"
+
+        # Pipeline validation
+        errors = pipeline.validate_pipeline()
+        assert errors == [], f"Unexpected errors: {errors}"
+
 
 class TestAsyncChunk:
     """Tests for async_chunk pipeline flag."""

@@ -152,6 +152,27 @@ _OMNI_MODELS = {
         "VoxtralTTSAudioGenerationForConditionalGeneration",
     ),
     "VoxtralTTSAudioTokenizer": ("voxtral_tts", "voxtral_tts_audio_tokenizer", "VoxtralTTSAudioTokenizer"),
+    ## minicpm_o_4_5
+    "MiniCPMOForConditionalGeneration": (
+        "minicpm4_5_o",
+        "minicpm4_5_o",
+        "MiniCPMOForConditionalGeneration",
+    ),
+    "MiniCPMOThinkerForConditionalGeneration": (
+        "minicpm4_5_o",
+        "minicpm4_5_o_thinker",
+        "MiniCPMOThinkerForConditionalGeneration",
+    ),
+    "MiniCPMOTTSForConditionalGeneration": (
+        "minicpm4_5_o",
+        "minicpm4_5_o_tts",
+        "MiniCPMOTTSForConditionalGeneration",
+    ),
+    "MiniCPMOToken2WavForConditionalGeneration": (
+        "minicpm4_5_o",
+        "minicpm4_5_o_token2wav",
+        "MiniCPMOToken2WavForConditionalGeneration",
+    ),
 }
 
 

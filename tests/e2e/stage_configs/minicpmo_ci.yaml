@@ -1,0 +1,118 @@
+# CI stage config for MiniCPM-O 4.5 — 3 stages on a single GPU
+# Stage 0: Thinker (Qwen3-8B + SigLip2 + Whisper → text + hidden states)
+# Stage 1: TTS (LlamaModel decoder → audio token IDs)
+# Stage 2: Token2Wav (CosyVoice2 flow + HiFi-GAN → 24kHz waveform)
+#
+# Optimised for CI: uses load_format=dummy, reduced context lengths, deterministic sampling.
+# Verified target: 1x L4 24GB
+
+stage_args:
+  - stage_id: 0
+    stage_type: llm
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: thinker
+      model_arch: MiniCPMOForConditionalGeneration
+      worker_type: ar
+      scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
+      max_model_len: 4096
+      max_num_batched_tokens: 4096
+      max_num_seqs: 1
+      gpu_memory_utilization: 0.55
+      skip_mm_profiling: true
+      enforce_eager: true
+      trust_remote_code: true
+      engine_output_type: latent
+      enable_prefix_caching: false
+      load_format: dummy
+    is_comprehension: true
+    final_output: true
+    final_output_type: text
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 64
+      seed: 42
+      detokenize: true
+
+  - stage_id: 1
+    stage_type: llm
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: tts
+      model_arch: MiniCPMOForConditionalGeneration
+      worker_type: generation
+      scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+      max_model_len: 2048
+      max_num_batched_tokens: 2048
+      max_num_seqs: 1
+      gpu_memory_utilization: 0.15
+      enforce_eager: true
+      trust_remote_code: true
+      engine_output_type: latent
+      enable_prefix_caching: false
+      async_scheduling: false
+      load_format: dummy
+    engine_input_source: [0]
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.llm2tts
+    final_output: false
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 128
+      seed: 42
+      detokenize: false
+
+  - stage_id: 2
+    stage_type: llm
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: token2wav
+      model_arch: MiniCPMOForConditionalGeneration
+      worker_type: generation
+      scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+      max_model_len: 65536
+      max_num_batched_tokens: 65536
+      max_num_seqs: 1
+      gpu_memory_utilization: 0.1
+      enforce_eager: true
+      trust_remote_code: true
+      engine_output_type: audio
+      enable_prefix_caching: false
+      async_scheduling: false
+      load_format: dummy
+    engine_input_source: [1]
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.minicpm4_5_o.tts2token2wav
+    final_output: true
+    final_output_type: audio
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 65536
+      seed: 42
+      detokenize: false
+
+runtime:
+  enabled: true
+  defaults:
+    window_size: -1
+    max_inflight: 1
+  edges:
+    - from: 0
+      to: 1
+      window_size: -1
+    - from: 1
+      to: 2
+      window_size: -1
