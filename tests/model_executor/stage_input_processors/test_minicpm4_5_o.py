@@ -61,21 +61,27 @@ def _make_stage_list(*outputs):
 
 
 class TestValidateStageInputs:
-    def test_empty_source_raises(self):
+    """Tests for _validate_stage_inputs guard function."""
+
+    def test_empty_source_raises(self) -> None:
+        """Empty engine_input_source should raise ValueError."""
         with pytest.raises(ValueError, match="cannot be empty"):
             _validate_stage_inputs([], [])
 
-    def test_invalid_stage_id_raises(self):
+    def test_invalid_stage_id_raises(self) -> None:
+        """Out-of-range stage ID should raise IndexError."""
         stages = _make_stage_list([_make_thinker_output()])
         with pytest.raises(IndexError, match="Invalid stage_id"):
             _validate_stage_inputs(stages, [99])
 
-    def test_none_outputs_raises(self):
+    def test_none_outputs_raises(self) -> None:
+        """Stage with no outputs should raise RuntimeError."""
         stages = [SimpleNamespace(engine_outputs=None)]
         with pytest.raises(RuntimeError, match="no outputs yet"):
             _validate_stage_inputs(stages, [0])
 
-    def test_valid_returns_outputs(self):
+    def test_valid_returns_outputs(self) -> None:
+        """Valid inputs should return the expected outputs list."""
         expected = [_make_thinker_output()]
         stages = _make_stage_list(expected)
         assert _validate_stage_inputs(stages, [0]) is expected
@@ -87,7 +93,9 @@ class TestValidateStageInputs:
 
 
 class TestLlm2Tts:
-    def test_basic(self):
+    """Tests for the llm2tts stage input processor."""
+
+    def test_basic(self) -> None:
         """With hidden states present, output has correct keys and shapes."""
         thinker_out = _make_thinker_output(has_hidden_states=True)
         stages = _make_stage_list([thinker_out])
@@ -103,7 +111,7 @@ class TestLlm2Tts:
         # prompt_token_ids should be a dummy [0]
         assert result[0]["prompt_token_ids"] == [0]
 
-    def test_fallback_when_hidden_states_missing(self):
+    def test_fallback_when_hidden_states_missing(self) -> None:
         """When llm_hidden_states is absent, falls back to zeros + token_ids."""
         thinker_out = _make_thinker_output(has_hidden_states=False)
         stages = _make_stage_list([thinker_out])
@@ -118,7 +126,7 @@ class TestLlm2Tts:
         # Token IDs from output.token_ids
         assert info["llm_token_ids"].shape == (_SEQ_LEN,)
 
-    def test_multiple_outputs(self):
+    def test_multiple_outputs(self) -> None:
         """Handles multiple thinker outputs (batch)."""
         out1 = _make_thinker_output(has_hidden_states=True)
         out2 = _make_thinker_output(has_hidden_states=True)
@@ -135,7 +143,9 @@ class TestLlm2Tts:
 
 
 class TestTts2Token2Wav:
-    def test_basic(self):
+    """Tests for the tts2token2wav stage input processor."""
+
+    def test_basic(self) -> None:
         """With audio_token_ids present, output has correct keys and shapes."""
         tts_out = _make_tts_output(has_audio_tokens=True)
         stages = _make_stage_list(None, [tts_out])  # stage 0=None, stage 1=tts
@@ -148,7 +158,7 @@ class TestTts2Token2Wav:
         assert info["audio_token_ids"].shape == (_NUM_AUDIO_TOKENS,)
         assert result[0]["prompt_token_ids"] == [0]
 
-    def test_fallback_when_audio_tokens_missing(self):
+    def test_fallback_when_audio_tokens_missing(self) -> None:
         """When audio_token_ids is absent, uses output.token_ids."""
         tts_out = _make_tts_output(has_audio_tokens=False)
         stages = _make_stage_list(None, [tts_out])
@@ -158,7 +168,7 @@ class TestTts2Token2Wav:
         info = result[0]["additional_information"]
         assert info["audio_token_ids"].shape == (_NUM_AUDIO_TOKENS,)
 
-    def test_multiple_outputs(self):
+    def test_multiple_outputs(self) -> None:
         """Handles multiple TTS outputs."""
         out1 = _make_tts_output(has_audio_tokens=True)
         out2 = _make_tts_output(has_audio_tokens=True)
@@ -175,7 +185,10 @@ class TestTts2Token2Wav:
 
 
 class TestLlm2TtsAsyncChunk:
-    def test_returns_none_when_no_data_and_not_finished(self):
+    """Tests for the llm2tts_async_chunk streaming processor."""
+
+    def test_returns_none_when_no_data_and_not_finished(self) -> None:
+        """No data and not finished should return None (no chunk to send)."""
         result = llm2tts_async_chunk(
             transfer_manager=None,
             pooling_output={},
@@ -184,7 +197,8 @@ class TestLlm2TtsAsyncChunk:
         )
         assert result is None
 
-    def test_returns_payload_when_finished(self):
+    def test_returns_payload_when_finished(self) -> None:
+        """Finished signal should produce a payload with fallback tensors."""
         result = llm2tts_async_chunk(
             transfer_manager=None,
             pooling_output={},
@@ -197,7 +211,8 @@ class TestLlm2TtsAsyncChunk:
         assert result["llm_hidden_states"].shape == (1, _HIDDEN_DIM)
         assert result["llm_token_ids"].shape == (1,)
 
-    def test_returns_payload_when_data_present(self):
+    def test_returns_payload_when_data_present(self) -> None:
+        """With data present, should return payload with actual tensors."""
         hidden = torch.randn(5, _HIDDEN_DIM)
         token_ids = torch.randint(0, 1000, (5,))
         result = llm2tts_async_chunk(
