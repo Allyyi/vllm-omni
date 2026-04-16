@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 
 import torch
+from PIL import Image
 from pydantic import model_validator
 from typing_extensions import Self
 from vllm.config.utils import config
@@ -193,12 +194,24 @@ class TransformerConfig:
     """Container for raw transformer configuration dictionaries."""
 
     params: dict[str, Any] = field(default_factory=dict)
+    quant_method: str | None = None
+    quant_config: "QuantizationConfig | None" = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TransformerConfig":
         if not isinstance(data, dict):
             raise TypeError(f"Expected transformer config dict, got {type(data)!r}")
-        return cls(params=dict(data))
+        params = dict(data)  # copy to avoid mutating caller's dict
+
+        quant_method: str | None = None
+        quant_config: QuantizationConfig | None = None
+        disk_qc = params.get("quantization_config")
+        if isinstance(disk_qc, dict) and "quant_method" in disk_qc:
+            quant_method = disk_qc["quant_method"]
+            kwargs = {k: v for k, v in disk_qc.items() if k != "quant_method"}
+            quant_config = build_quant_config(quant_method, **kwargs)
+
+        return cls(params=params, quant_method=quant_method, quant_config=quant_config)
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self.params)
@@ -598,6 +611,17 @@ class OmniDiffusionConfig:
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
 
+        # Auto-detect quantization from TransformerConfig if not explicitly set.
+        # This covers the case where tf_model_config is passed at construction
+        # time.  For late (post-construction) assignment, callers should use
+        # set_tf_model_config() which propagates quant_config automatically.
+        if self.quantization_config is None and self.tf_model_config.quant_config is not None:
+            self.quantization_config = self.tf_model_config.quant_config
+            logger.info(
+                "Auto-detected quantization '%s' from model config",
+                self.tf_model_config.quant_method,
+            )
+
         # Resolve quantization_config: str/dict -> QuantizationConfig via build_quant_config.
         if self.quantization_config is not None:
             if isinstance(self.quantization_config, QuantizationConfig):
@@ -617,8 +641,73 @@ class OmniDiffusionConfig:
         elif self.max_cpu_loras < 1:
             raise ValueError("max_cpu_loras must be >= 1 for diffusion LoRA")
 
+    def set_tf_model_config(self, tf_config: "TransformerConfig") -> None:
+        """Assign `tf_model_config` and propagate quantization if detected.
+
+        In the normal startup flow `OmniDiffusionConfig` is created
+        *before* the transformer `config.json` is loaded from disk, so
+        `__post_init__` sees an empty `TransformerConfig`.  Callers
+        that load the config later should use this method instead of bare
+        assignment so that an embedded `quant_config` is propagated to
+        `self.quantization_config` automatically.
+
+        Args:
+            tf_config: Transformer configuration, typically built via
+                `TransformerConfig.from_dict`.
+        """
+        self.tf_model_config = tf_config
+        if self.quantization_config is None and tf_config.quant_config is not None:
+            self.quantization_config = tf_config.quant_config
+            logger.info(
+                "Auto-detected quantization '%s' from model config",
+                tf_config.quant_method,
+            )
+
     def update_multimodal_support(self) -> None:
         self.supports_multimodal_inputs = self.model_class_name in {"QwenImageEditPlusPipeline"}
+
+    def enrich_config(self) -> None:
+        """Load model metadata from HuggingFace and populate config fields.
+
+        Diffusers-style models expose ``model_index.json`` with ``_class_name``.
+        Non-diffusers models (e.g. Bagel, NextStep) only have ``config.json``,
+        so we fall back to reading that and mapping model_type manually.
+        """
+        from vllm.transformers_utils.config import get_hf_file_to_dict
+
+        try:
+            config_dict = get_hf_file_to_dict("model_index.json", self.model)
+            if config_dict is not None:
+                if self.model_class_name is None:
+                    self.model_class_name = config_dict.get("_class_name", None)
+                self.update_multimodal_support()
+
+                tf_config_dict = get_hf_file_to_dict("transformer/config.json", self.model)
+                self.tf_model_config = TransformerConfig.from_dict(tf_config_dict)
+            else:
+                raise FileNotFoundError("model_index.json not found")
+        except (AttributeError, OSError, ValueError, FileNotFoundError):
+            cfg = get_hf_file_to_dict("config.json", self.model)
+            if cfg is None:
+                raise ValueError(f"Could not find config.json or model_index.json for model {self.model}")
+
+            self.tf_model_config = TransformerConfig.from_dict(cfg)
+            model_type = cfg.get("model_type")
+            architectures = cfg.get("architectures") or []
+
+            if model_type == "bagel" or "BagelForConditionalGeneration" in architectures:
+                self.model_class_name = "BagelPipeline"
+                self.tf_model_config = TransformerConfig()
+                self.update_multimodal_support()
+            elif model_type == "nextstep":
+                if self.model_class_name is None:
+                    self.model_class_name = "NextStep11Pipeline"
+                self.tf_model_config = TransformerConfig()
+                self.update_multimodal_support()
+            elif architectures and len(architectures) == 1:
+                self.model_class_name = architectures[0]
+            else:
+                raise
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":
@@ -656,10 +745,12 @@ class DiffusionOutput:
     Final output (after pipeline completion)
     """
 
-    output: torch.Tensor | None = None
-    trajectory_timesteps: list[torch.Tensor] | None = None
-    trajectory_latents: torch.Tensor | None = None
-    trajectory_decoded: list[torch.Tensor] | None = None
+    # Fields may be replaced with SHM handle dicts by ipc.pack_diffusion_output_shm
+    output: torch.Tensor | dict | None = None
+    trajectory_timesteps: torch.Tensor | dict | None = None
+    trajectory_latents: torch.Tensor | dict | None = None
+    trajectory_log_probs: torch.Tensor | dict | None = None
+    trajectory_decoded: list[Image.Image] | None = None
     error: str | None = None
     aborted: bool = False
     abort_message: str | None = None
