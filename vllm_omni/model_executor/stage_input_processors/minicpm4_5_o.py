@@ -78,6 +78,13 @@ def llm2tts(
         # Token IDs come from the sampled output, not from multimodal_output
         llm_token_ids = torch.tensor(output.token_ids, dtype=torch.long, device=device)
 
+        # Align lengths: hidden states may be shorter by 1 if the final EOS step
+        # hidden state was not captured (matching the reference which slices both
+        # by the same tts_bound range).
+        seq_len = min(llm_hidden_states.shape[0], llm_token_ids.shape[0])
+        llm_hidden_states = llm_hidden_states[:seq_len]
+        llm_token_ids = llm_token_ids[:seq_len]
+
         info = {
             "llm_hidden_states": llm_hidden_states,
             "llm_token_ids": llm_token_ids,

@@ -106,6 +106,27 @@ class MiniCPMOForConditionalGeneration(nn.Module):
         return tts_model
 
     # ------------------------------------------------------------------
+    # Dummy warmup support
+    # ------------------------------------------------------------------
+
+    def get_dummy_runtime_additional_information(self, num_reqs: int) -> list[dict[str, Any]]:
+        """Return placeholder runtime info for the flashinfer autotune dummy run.
+
+        Only implemented for the ``tts`` stage.  Produces the minimum viable
+        inputs (seq_len=1) so the warmup forward pass completes without error;
+        actual values are discarded immediately after.
+        """
+        if self.model_stage != "tts":
+            return None
+
+        llm_dim: int = self.tts.config.llm_dim
+        dummy_info = {
+            "llm_hidden_states": torch.zeros((1, llm_dim), dtype=torch.float32),
+            "llm_token_ids": torch.zeros((1,), dtype=torch.long),
+        }
+        return [dummy_info for _ in range(num_reqs)]
+
+    # ------------------------------------------------------------------
     # TTS preprocessing
     # ------------------------------------------------------------------
 
@@ -133,7 +154,7 @@ class MiniCPMOForConditionalGeneration(nn.Module):
         device = self.tts.emb_text.weight.device
         dtype = self.tts.emb_text.weight.dtype
 
-        llm_hidden_states = llm_hidden_states.to(device=device, dtype=torch.float32)
+        llm_hidden_states = llm_hidden_states.to(device=device, dtype=dtype)
         llm_token_ids = llm_token_ids.to(device=device, dtype=torch.long)
 
         # Build condition embeddings

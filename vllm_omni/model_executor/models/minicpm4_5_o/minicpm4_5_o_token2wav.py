@@ -214,14 +214,14 @@ class MiniCPMOToken2WavForConditionalGeneration(nn.Module):
                 - "is_streaming" (optional): bool tensor, True for async_chunk mode
                 - "is_last_chunk" (optional): bool tensor, True on final chunk
         """
-        self._init_vocoder()
-
         if additional_information is None:
             logger.warning("Token2Wav received no additional_information")
             return OmniOutput(
                 text_hidden_states=None,
                 multimodal_outputs={"model_outputs": torch.zeros(1)},
             )
+
+        self._init_vocoder()
 
         audio_token_ids = additional_information.get("audio_token_ids")
         if audio_token_ids is None:

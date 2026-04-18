@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils import weight_norm
-from torch.nn.utils.parametrize import cached as P
+import torch.nn.utils.parametrize as P
 from tqdm import tqdm
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN

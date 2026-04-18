@@ -8,8 +8,8 @@ stage_args:
   - stage_id: 0
     stage_type: llm
     runtime:
+      process: true
       devices: "0"
-      max_batch_size: 1
     engine_args:
       model_stage: thinker
       model_arch: MiniCPMOForConditionalGeneration
@@ -36,8 +36,8 @@ stage_args:
   - stage_id: 1
     stage_type: llm
     runtime:
+      process: true
       devices: "0"
-      max_batch_size: 1
     engine_args:
       model_stage: tts
       model_arch: MiniCPMOForConditionalGeneration
@@ -65,8 +65,8 @@ stage_args:
   - stage_id: 2
     stage_type: llm
     runtime:
+      process: true
       devices: "0"
-      max_batch_size: 1
     engine_args:
       model_stage: token2wav
       model_arch: MiniCPMOForConditionalGeneration

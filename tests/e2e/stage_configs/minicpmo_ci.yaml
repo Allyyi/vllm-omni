@@ -21,7 +21,8 @@ stage_args:
       max_model_len: 4096
       max_num_batched_tokens: 4096
       max_num_seqs: 1
-      gpu_memory_utilization: 0.55
+      gpu_memory_utilization: 0.85
+      mm_processor_cache_gb: 0
       skip_mm_profiling: true
       enforce_eager: true
       trust_remote_code: true
@@ -53,7 +54,7 @@ stage_args:
       max_model_len: 2048
       max_num_batched_tokens: 2048
       max_num_seqs: 1
-      gpu_memory_utilization: 0.15
+      gpu_memory_utilization: 0.08
       enforce_eager: true
       trust_remote_code: true
       engine_output_type: latent
@@ -82,10 +83,10 @@ stage_args:
       model_arch: MiniCPMOForConditionalGeneration
       worker_type: generation
       scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
-      max_model_len: 65536
-      max_num_batched_tokens: 65536
+      max_model_len: 8192
+      max_num_batched_tokens: 8192
       max_num_seqs: 1
-      gpu_memory_utilization: 0.1
+      gpu_memory_utilization: 0.05
       enforce_eager: true
       trust_remote_code: true
       engine_output_type: audio
@@ -100,7 +101,7 @@ stage_args:
       temperature: 0.0
       top_p: 1.0
       top_k: -1
-      max_tokens: 65536
+      max_tokens: 8192
       seed: 42
       detokenize: false
 
